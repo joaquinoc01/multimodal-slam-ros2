@@ -14,5 +14,10 @@ private:
 
     bool first_odom_received_ = false;
     geometry_msgs::msg::Pose prev_odom_pose_;
+    geometry_msgs::msg::Pose last_odom_pose_;
     geometry_msgs::msg::Pose2D estimated_pose_;
+
+    bool first_pointcloud_received_ = false;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr previous_scan_;
+    double fitness_threshold_; 
 };
