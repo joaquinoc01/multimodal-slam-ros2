@@ -1,20 +1,16 @@
-#include "include/localization_node.hpp"
+#include "localization/localization_node.hpp"
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/utils.h>  // for tf2::getYaw
-
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/registration/icp.h>
 
 Localization::Localization() : Node("localization_node")
 {
     odom_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
     "/odom", 10, std::bind(&Localization::odom_callback, this, std::placeholders::_1));
     pointcloud_subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "/odom", 10, std::bind(&Localization::pointcloud_callback, this, std::placeholders::_1));
+    "/scan_pointcloud", 10, std::bind(&Localization::pointcloud_callback, this, std::placeholders::_1));
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimate_pose", 10);
     previous_scan_.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
     // Initialize estimated_pose
@@ -98,6 +94,28 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
         estimated_pose_ = predicted_pose;
     }
 
+    geometry_msgs::msg::PoseStamped pose_msg;
+    pose_msg.header.stamp = this->now();
+    pose_msg.header.frame_id = "odom";
+    pose_msg.pose.position.x = estimated_pose_.x;
+    pose_msg.pose.position.y = estimated_pose_.y;
+    pose_msg.pose.position.z = 0.0;
+
+    tf2::Quaternion q;
+    q.setRPY(0, 0, estimated_pose_.theta);
+    pose_msg.pose.orientation = tf2::toMsg(q);
+
+    pose_pub_->publish(pose_msg);
+
     *previous_scan_ = *current_cloud;
     prev_odom_pose_ = last_odom_pose_;  // Update odom ref for next delta
+}
+
+int main(int argc, char **argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<Localization>();
+  rclcpp::spin(node);
+  rclcpp::shutdown();
+  return 0;
 }
