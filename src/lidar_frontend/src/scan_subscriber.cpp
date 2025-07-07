@@ -1,4 +1,4 @@
-#include "include/scan_subscriber.hpp"
+#include "lidar_frontend/scan_subscriber.hpp"
 
 #include <cmath>
 #include <pcl_conversions/pcl_conversions.h>

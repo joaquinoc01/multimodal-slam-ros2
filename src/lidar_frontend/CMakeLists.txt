@@ -26,7 +26,7 @@ ament_target_dependencies(scan_node ${ROS2_DEPS})
 
 target_include_directories(scan_node
   PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
 target_link_libraries(scan_node ${PCL_LIBRARIES})
