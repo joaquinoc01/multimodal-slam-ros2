@@ -3,6 +3,8 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/utils.h>  // for tf2::getYaw
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 
 Localization::Localization() : Node("localization_node")
 {
@@ -19,6 +21,8 @@ Localization::Localization() : Node("localization_node")
     estimated_pose_.theta = 0.0;
 
     fitness_threshold_ = 0.001; // For rejecting bad ICP matches
+
+    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 }
 
 void Localization::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -52,6 +56,7 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
         return;
     }
 
+    // -- Prediction step
     // Compute odometry delta from last scan pose
     double dx = last_odom_pose_.x - prev_odom_pose_.x;
     double dy = last_odom_pose_.y - prev_odom_pose_.y;
@@ -67,6 +72,7 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     predicted_pose.theta = estimated_pose_.theta + dtheta;
     predicted_pose.theta = std::atan2(std::sin(predicted_pose.theta), std::cos(predicted_pose.theta));
 
+    // -- Correction step 
     // Run ICP
     pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
     icp.setInputSource(current_cloud);
@@ -94,21 +100,43 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
         estimated_pose_ = predicted_pose;
     }
 
+    // -- Publish TF and Pose
+    geometry_msgs::msg::TransformStamped transform;
+    transform.header.stamp = this->get_clock()->now();
+    transform.header.frame_id = "map";  // TF parent frame
+    transform.child_frame_id = "base_link"; // TF child frame
+
+    transform.transform.translation.x = estimated_pose_.x;
+    transform.transform.translation.y = estimated_pose_.y;
+    transform.transform.translation.z = 0.0;
+
+    tf2::Quaternion q;
+    q.setRPY(0, 0, estimated_pose_.theta);
+    transform.transform.rotation.x = q.x();
+    transform.transform.rotation.y = q.y();
+    transform.transform.rotation.z = q.z();
+    transform.transform.rotation.w = q.w();
+
+    tf_broadcaster_->sendTransform(transform);
+
+    // Also publish pose as PoseStamped for RViz
     geometry_msgs::msg::PoseStamped pose_msg;
-    pose_msg.header.stamp = this->now();
-    pose_msg.header.frame_id = "odom";
+    pose_msg.header.stamp = this->get_clock()->now();
+    pose_msg.header.frame_id = "map";
+
     pose_msg.pose.position.x = estimated_pose_.x;
     pose_msg.pose.position.y = estimated_pose_.y;
     pose_msg.pose.position.z = 0.0;
 
-    tf2::Quaternion q;
-    q.setRPY(0, 0, estimated_pose_.theta);
-    pose_msg.pose.orientation = tf2::toMsg(q);
-
+    pose_msg.pose.orientation.x = q.x();
+    pose_msg.pose.orientation.y = q.y();
+    pose_msg.pose.orientation.z = q.z();
+    pose_msg.pose.orientation.w = q.w();
     pose_pub_->publish(pose_msg);
 
+    // Update previous scan and odometry for next iteration 
     *previous_scan_ = *current_cloud;
-    prev_odom_pose_ = last_odom_pose_;  // Update odom ref for next delta
+    prev_odom_pose_ = last_odom_pose_;
 }
 
 int main(int argc, char **argv)

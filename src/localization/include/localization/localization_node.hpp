@@ -31,4 +31,5 @@ private:
     bool first_pointcloud_received_ = false;
     pcl::PointCloud<pcl::PointXYZ>::Ptr previous_scan_;
     double fitness_threshold_; 
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_; // For publishing a transform between map and base_link
 };
