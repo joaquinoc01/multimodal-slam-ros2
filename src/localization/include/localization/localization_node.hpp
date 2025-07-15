@@ -10,6 +10,8 @@
 #include <pcl/point_types.h>
 #include <pcl/registration/icp.h>
 
+#include <tf2_ros/transform_broadcaster.h>
+
 class Localization : public rclcpp::Node
 {
 public:
@@ -30,6 +32,7 @@ private:
 
     bool first_pointcloud_received_ = false;
     pcl::PointCloud<pcl::PointXYZ>::Ptr previous_scan_;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr global_map_;
     double fitness_threshold_; 
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_; // For publishing a transform between map and base_link
 };

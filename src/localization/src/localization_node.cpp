@@ -3,7 +3,6 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/utils.h>  // for tf2::getYaw
-#include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
 Localization::Localization() : Node("localization_node")
@@ -13,7 +12,9 @@ Localization::Localization() : Node("localization_node")
     pointcloud_subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     "/scan_pointcloud", 10, std::bind(&Localization::pointcloud_callback, this, std::placeholders::_1));
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimate_pose", 10);
+
     previous_scan_.reset(new pcl::PointCloud<pcl::PointXYZ>);
+    global_map_.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
     // Initialize estimated_pose
     estimated_pose_.x = 0.0;
@@ -50,9 +51,10 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     pcl::fromROSMsg(*msg, *current_cloud);
 
     if (!first_pointcloud_received_) {
-        *previous_scan_ = *current_cloud;
-        prev_odom_pose_ = last_odom_pose_;
+        *global_map_ = *current_cloud;  // Initialize global map with first scan
         first_pointcloud_received_ = true;
+        prev_odom_pose_ = last_odom_pose_;
+        estimated_pose_ = last_odom_pose_;
         return;
     }
 
@@ -76,7 +78,7 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     // Run ICP
     pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
     icp.setInputSource(current_cloud);
-    icp.setInputTarget(previous_scan_);
+    icp.setInputTarget(global_map_);
 
     pcl::PointCloud<pcl::PointXYZ> Final;
     icp.align(Final);
@@ -95,6 +97,19 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
         estimated_pose_.y += sin_theta * delta_x + cos_theta * delta_y;
         estimated_pose_.theta += delta_theta;
         estimated_pose_.theta = std::atan2(std::sin(estimated_pose_.theta), std::cos(estimated_pose_.theta));
+
+        pcl::PointCloud<pcl::PointXYZ> transformed_scan;
+        pcl::transformPointCloud(*current_cloud, transformed_scan, transformation);
+
+        RCLCPP_INFO(this->get_logger(), "ICP converged: %s, Fitness score: %.6f",
+            icp.hasConverged() ? "true" : "false",
+            icp.getFitnessScore());
+
+        RCLCPP_INFO(this->get_logger(), "Estimated pose: x=%.3f, y=%.3f, theta=%.3f",
+                    estimated_pose_.x, estimated_pose_.y, estimated_pose_.theta);
+
+        // Add new points to global map
+        *global_map_ += transformed_scan;
     } else {
         RCLCPP_WARN(this->get_logger(), "Poor transform. Rejecting ICP. Using only odometry.");
         estimated_pose_ = predicted_pose;
