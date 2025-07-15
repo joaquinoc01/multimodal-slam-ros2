@@ -4,6 +4,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/utils.h>  // for tf2::getYaw
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <pcl/filters/voxel_grid.h>
 
 Localization::Localization() : Node("localization_node")
 {
@@ -108,8 +109,16 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
         RCLCPP_INFO(this->get_logger(), "Estimated pose: x=%.3f, y=%.3f, theta=%.3f",
                     estimated_pose_.x, estimated_pose_.y, estimated_pose_.theta);
 
-        // Add new points to global map
-        *global_map_ += transformed_scan;
+        // Downsample transformed scan before merging into map
+        pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_scan(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::VoxelGrid<pcl::PointXYZ> voxel_filter;
+        voxel_filter.setInputCloud(transformed_scan.makeShared());
+        voxel_filter.setLeafSize(0.1f, 0.1f, 0.1f);  // adjust voxel size (in meters) as needed
+        voxel_filter.filter(*filtered_scan);
+
+        // Merge filtered scan into global map
+        *global_map_ += *filtered_scan;
+
     } else {
         RCLCPP_WARN(this->get_logger(), "Poor transform. Rejecting ICP. Using only odometry.");
         estimated_pose_ = predicted_pose;
