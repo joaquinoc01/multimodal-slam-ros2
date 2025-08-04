@@ -51,6 +51,13 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     pcl::PointCloud<pcl::PointXYZ>::Ptr current_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::fromROSMsg(*msg, *current_cloud);
 
+    // Filter input scan before ICP
+    pcl::VoxelGrid<pcl::PointXYZ> voxel_input_filter;
+    voxel_input_filter.setInputCloud(current_cloud);
+    voxel_input_filter.setLeafSize(0.1f, 0.1f, 0.1f);  // Tune for density and speed
+    pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_input(new pcl::PointCloud<pcl::PointXYZ>);
+    voxel_input_filter.filter(*filtered_input);
+
     if (!first_pointcloud_received_) {
         *global_map_ = *current_cloud;  // Initialize global map with first scan
         first_pointcloud_received_ = true;
@@ -78,7 +85,7 @@ void Localization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     // -- Correction step 
     // Run ICP
     pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-    icp.setInputSource(current_cloud);
+    icp.setInputSource(filtered_input);
     icp.setInputTarget(global_map_);
 
     pcl::PointCloud<pcl::PointXYZ> Final;
